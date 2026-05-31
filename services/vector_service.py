@@ -70,7 +70,7 @@ def _get_index():
         else:
             logger.info("Pinecone index '%s' found", index_name)
 
-        _pc_index = pc.index(index_name)
+        _pc_index = pc.Index(index_name)
     return _pc_index
 
 
