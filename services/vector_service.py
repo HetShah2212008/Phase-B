@@ -1,86 +1,125 @@
 """
-ChromaDB vector store with sentence-transformers embeddings.
+Pinecone vector store with Pinecone Inference embeddings.
 
 Embeddings turn text into dense vectors so similar meaning → similar vectors.
-At query time we embed the user's question and find the closest stored chunks
-(cosine similarity in HNSW index) — that is the "Retrieval" in RAG.
+At query time we embed the user's question and find the closest stored vectors
+(cosine similarity) — that is the "Retrieval" in RAG.
+
+Replaces the previous ChromaDB + sentence-transformers implementation.
+The public interface (VectorService, add_documents, add_document_chunks,
+similarity_search) is identical so no other file needs to change.
 """
 
 import logging
+import os
 import uuid
 from typing import Any
 
-import chromadb
-from chromadb.api.models.Collection import Collection
-from chromadb.utils import embedding_functions
-
-from config import get_settings
-
 logger = logging.getLogger(__name__)
 
-_embedding_model = None
+# ---------------------------------------------------------------------------
+# Embedding model dimensions
+# multilingual-e5-large produces 1024-dimensional dense vectors.
+# ---------------------------------------------------------------------------
+_EMBED_MODEL = "multilingual-e5-large"
+_EMBED_DIM   = 1024
+_BATCH_SIZE  = 96   # max inputs per Pinecone inference call
+
+# ---------------------------------------------------------------------------
+# Module-level lazy singletons
+# ---------------------------------------------------------------------------
+_pc_client = None   # pinecone.Pinecone instance
+_pc_index  = None   # pinecone.Index instance
 
 
-def get_embedding_model():
-    global _embedding_model
-    if _embedding_model is None:
-        settings = get_settings()
-        _embedding_model = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name=settings.embedding_model,
+def _get_client():
+    """Return (and lazily create) the Pinecone client."""
+    global _pc_client
+    if _pc_client is None:
+        from pinecone import Pinecone  # deferred import — heavy at module level
+
+        api_key = os.environ.get("PINECONE_API_KEY", "")
+        if not api_key:
+            raise RuntimeError(
+                "PINECONE_API_KEY environment variable is not set. "
+                "Add it to your .env file."
+            )
+        _pc_client = Pinecone(api_key=api_key)
+        logger.info("Pinecone client initialised")
+    return _pc_client
+
+
+def _get_index():
+    """Return (and lazily connect to) the Pinecone index, creating it if needed."""
+    global _pc_index
+    if _pc_index is None:
+        from pinecone import ServerlessSpec  # deferred import
+
+        pc = _get_client()
+        index_name = os.environ.get("PINECONE_INDEX", "phaseb")
+
+        existing = [idx.name for idx in pc.list_indexes()]
+        if index_name not in existing:
+            logger.info(
+                "Pinecone index '%s' not found — creating (dim=%d, metric=cosine)",
+                index_name, _EMBED_DIM,
+            )
+            pc.create_index(
+                name=index_name,
+                dimension=_EMBED_DIM,
+                metric="cosine",
+                spec=ServerlessSpec(cloud="aws", region="us-east-1"),
+            )
+            logger.info("Pinecone index '%s' created", index_name)
+        else:
+            logger.info("Pinecone index '%s' found", index_name)
+
+        _pc_index = pc.index(index_name)
+    return _pc_index
+
+
+def _embed(texts: list[str], *, input_type: str = "passage") -> list[list[float]]:
+    """
+    Embed a list of texts using Pinecone Inference (multilingual-e5-large).
+
+    Args:
+        texts:      Non-empty list of strings to embed.
+        input_type: "passage" for documents being indexed,
+                    "query"   for search queries.
+
+    Returns:
+        List of float vectors, one per input text.
+    """
+    pc = _get_client()
+    all_vectors: list[list[float]] = []
+
+    for i in range(0, len(texts), _BATCH_SIZE):
+        batch = texts[i : i + _BATCH_SIZE]
+        result = pc.inference.embed(
+            model=_EMBED_MODEL,
+            inputs=batch,
+            parameters={"input_type": input_type, "truncate": "END"},
         )
-    return _embedding_model
+        all_vectors.extend(emb.values for emb in result.data)
 
+    return all_vectors
+
+
+# ---------------------------------------------------------------------------
+# VectorService — public interface (identical to the ChromaDB version)
+# ---------------------------------------------------------------------------
 
 class VectorService:
     """
-    Persistent Chroma collection using all-MiniLM-L6-v2 embeddings.
+    Pinecone-backed vector store using multilingual-e5-large embeddings.
 
-    Storage layout per chunk:
-      - documents: chunk text
-      - metadatas: source file, page, chunk index, etc.
-      - embeddings: computed by SentenceTransformer (not stored manually)
+    All heavy initialisation (client, index connection, first embed call)
+    is deferred to the first actual operation so startup RAM stays low.
     """
 
-    def __init__(self) -> None:
-        settings = get_settings()
-        self._collection_name = settings.chroma_collection_name
-        self._embedding_model = settings.embedding_model
-        self._persist_dir = settings.chroma_persist_dir
-        self._chroma_client: chromadb.PersistentClient | None = None
-        self._collection: Collection | None = None
-        # Both the ChromaDB client and embedding model are loaded lazily on first use
-
-    @property
-    def _client(self) -> chromadb.PersistentClient:
-        if self._chroma_client is None:
-            self._chroma_client = chromadb.PersistentClient(path=self._persist_dir)
-        return self._chroma_client
-
-    def get_or_create_collection(self, name: str | None = None) -> Collection:
-        """
-        Return a collection configured with our embedding function.
-
-        `metadata={"hnsw:space": "cosine"}` tells Chroma to rank by cosine
-        distance — standard for normalized sentence embeddings.
-        """
-        collection_name = name or self._collection_name
-        self._collection = self._client.get_or_create_collection(
-            name=collection_name,
-            embedding_function=get_embedding_model(),
-            metadata={"hnsw:space": "cosine"},
-        )
-        logger.info(
-            "Chroma collection '%s' ready (embeddings=%s)",
-            collection_name,
-            self._embedding_model,
-        )
-        return self._collection
-
-    @property
-    def collection(self) -> Collection:
-        if self._collection is None:
-            return self.get_or_create_collection()
-        return self._collection
+    # ------------------------------------------------------------------
+    # Write path
+    # ------------------------------------------------------------------
 
     def add_documents(
         self,
@@ -90,30 +129,42 @@ class VectorService:
         ids: list[str] | None = None,
     ) -> list[str]:
         """
-        Embed and store text chunks in ChromaDB.
+        Embed and upsert text chunks into Pinecone.
 
-        Chroma calls the SentenceTransformer embedding function internally:
-          text → 384-dim vector → stored in HNSW index with metadata.
+        Args:
+            documents:  List of text chunks to index.
+            metadatas:  Optional per-chunk metadata dicts (must match length).
+            ids:        Optional explicit IDs; UUIDs are generated if omitted.
 
         Returns:
-            List of chunk IDs assigned in the database.
+            List of vector IDs stored in Pinecone.
         """
         if not documents:
             return []
 
-        collection = self.collection
-        doc_ids = ids or [str(uuid.uuid4()) for _ in documents]
-        meta_list = metadatas or [{} for _ in documents]
-
-        if len(meta_list) != len(documents):
+        if metadatas is not None and len(metadatas) != len(documents):
             raise ValueError("metadatas length must match documents length")
 
-        collection.add(
-            documents=documents,
-            metadatas=meta_list,
-            ids=doc_ids,
-        )
-        logger.info("Indexed %d chunk(s) in '%s'", len(documents), collection.name)
+        doc_ids   = ids or [str(uuid.uuid4()) for _ in documents]
+        meta_list = metadatas or [{} for _ in documents]
+
+        # Embed all chunks (passage mode)
+        vectors = _embed(documents, input_type="passage")
+
+        # Build upsert payload — store the original text in metadata so we
+        # can return it from similarity_search without a separate fetch.
+        upsert_payload = [
+            {
+                "id":       doc_id,
+                "values":   vec,
+                "metadata": {**meta, "_text": doc},
+            }
+            for doc_id, vec, meta, doc in zip(doc_ids, vectors, meta_list, documents)
+        ]
+
+        index = _get_index()
+        index.upsert(vectors=upsert_payload, batch_size=_BATCH_SIZE)
+        logger.info("Indexed %d chunk(s) in Pinecone", len(documents))
         return doc_ids
 
     def add_document_chunks(
@@ -126,6 +177,10 @@ class VectorService:
         """Alias for add_documents — keeps older call sites working."""
         return self.add_documents(chunks, metadatas=metadatas, ids=ids)
 
+    # ------------------------------------------------------------------
+    # Read path
+    # ------------------------------------------------------------------
+
     def similarity_search(
         self,
         query: str,
@@ -133,62 +188,50 @@ class VectorService:
         n_results: int | None = None,
     ) -> list[dict[str, Any]]:
         """
-        Retrieve the top-k chunks most similar to the query (dynamic retrieval).
+        Retrieve the top-k chunks most similar to the query.
 
         Retrieval flow:
-          1. Embed the query with the same MiniLM model used at ingest time
-          2. Chroma compares query vector to all chunk vectors (cosine distance)
-          3. Return closest chunks with distance → converted to similarity score
+          1. Embed the query with multilingual-e5-large (query mode)
+          2. Pinecone compares query vector to all stored vectors (cosine)
+          3. Return closest matches with score → converted to similarity
 
         Returns:
             List of dicts: id, document, metadata, distance, similarity.
+            (distance here is 1 - cosine_score, for API compatibility.)
         """
         if not query.strip():
             return []
 
-        settings = get_settings()
-        top_k = n_results if n_results is not None else settings.rag_top_k
-        collection = self.collection
+        from config import get_settings
+        settings  = get_settings()
+        top_k     = n_results if n_results is not None else settings.rag_top_k
 
-        # Cap results by how many documents exist (Chroma errors if k > count)
-        count = collection.count()
-        if count == 0:
-            logger.warning("Similarity search on empty collection")
-            return []
-        top_k = min(top_k, count)
+        # Embed the query (query mode)
+        query_vec = _embed([query], input_type="query")[0]
 
-        results = collection.query(
-            query_texts=[query],
-            n_results=top_k,
-            include=["documents", "metadatas", "distances"],
+        index = _get_index()
+        response = index.query(
+            vector=query_vec,
+            top_k=top_k,
+            include_metadata=True,
         )
 
-        ids = results.get("ids", [[]])[0]
-        documents = results.get("documents", [[]])[0]
-        metadatas = results.get("metadatas", [[]])[0]
-        distances = results.get("distances", [[]])[0]
-
         hits: list[dict[str, Any]] = []
-        for doc_id, doc, meta, dist in zip(ids, documents, metadatas, distances):
-            # Cosine distance: 0 = identical, 2 = opposite. Map to similarity in [0,1].
-            similarity = self._distance_to_similarity(dist)
+        for match in response.matches:
+            score      = float(match.score)          # cosine similarity in [0, 1]
+            distance   = max(0.0, 1.0 - score)       # distance for API compat
+            raw_meta   = dict(match.metadata or {})
+            text       = raw_meta.pop("_text", "")   # recover stored text
+
             hits.append(
                 {
-                    "id": doc_id,
-                    "document": doc,
-                    "metadata": meta or {},
-                    "distance": dist,
-                    "similarity": similarity,
+                    "id":         match.id,
+                    "document":   text,
+                    "metadata":   raw_meta,
+                    "distance":   distance,
+                    "similarity": score,
                 }
             )
 
         logger.info("Retrieved %d chunk(s) for query", len(hits))
         return hits
-
-    @staticmethod
-    def _distance_to_similarity(distance: float | None) -> float:
-        """Convert Chroma cosine distance to a human-readable similarity score."""
-        if distance is None:
-            return 0.0
-        # Clamp for numerical safety
-        return max(0.0, min(1.0, 1.0 - float(distance)))

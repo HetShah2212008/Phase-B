@@ -15,9 +15,9 @@ langchain-text-splitters>=0.3.0
 langgraph>=0.2.0
 
 # Vector DB & documents
-chromadb>=0.5.0
+pinecone-client>=5.0.0
+openai>=1.0.0
 pypdf>=5.0.0
-sentence-transformers>=3.0.0
 
 # File uploads
 python-multipart>=0.0.9
