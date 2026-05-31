@@ -25,6 +25,7 @@ python-multipart>=0.0.9
 # Time series
 pandas>=2.2.0
 prophet>=1.1.5
+scikit-learn
 
 # Google Gemini (current supported SDK)
 google-genai>=1.0.0
