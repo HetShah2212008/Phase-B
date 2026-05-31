@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI):
     """
     Startup / shutdown hooks.
 
-    Use this to warm up DB connections, Chroma, or shared service instances
+    Use this to warm up connections or shared service instances
     when you add heavier initialization in later milestones.
     """
     settings = get_settings()

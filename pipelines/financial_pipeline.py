@@ -32,7 +32,7 @@ Usage:
 
 Note on RAGAgent:
     The existing RAGAgent (agents/rag_agent.py) is imported and used as-is.
-    Its internal logic, fallback handling, and ChromaDB integration are
+    Its internal logic, fallback handling, and Pinecone integration are
     completely untouched. This pipeline only calls agent.run(state) and
     maps the result into FinancialPipelineState.
 """

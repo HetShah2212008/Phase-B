@@ -4,10 +4,6 @@ Pinecone vector store with Pinecone Inference embeddings.
 Embeddings turn text into dense vectors so similar meaning → similar vectors.
 At query time we embed the user's question and find the closest stored vectors
 (cosine similarity) — that is the "Retrieval" in RAG.
-
-Replaces the previous ChromaDB + sentence-transformers implementation.
-The public interface (VectorService, add_documents, add_document_chunks,
-similarity_search) is identical so no other file needs to change.
 """
 
 import logging
@@ -106,7 +102,7 @@ def _embed(texts: list[str], *, input_type: str = "passage") -> list[list[float]
 
 
 # ---------------------------------------------------------------------------
-# VectorService — public interface (identical to the ChromaDB version)
+# VectorService — public interface
 # ---------------------------------------------------------------------------
 
 class VectorService:

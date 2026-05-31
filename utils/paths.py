@@ -2,17 +2,16 @@
 Filesystem path helpers.
 
 Resolves storage directories at import time so every module that needs
-CHROMA_DIR or UPLOADS_DIR can import them directly.
+UPLOADS_DIR can import it directly.
 
 Priority:
   1. RENDER_PERSISTENT_DIR env var — set this on Render.com to a persistent
-     disk mount path (e.g. /var/data). ChromaDB and uploads will live there
-     so they survive deploys.
+     disk mount path (e.g. /var/data). Uploads will live there so they
+     survive deploys.
   2. Project directory fallback — used locally and in any environment that
      does not set RENDER_PERSISTENT_DIR.
 
 Exported constants:
-  CHROMA_DIR  — Path to the ChromaDB persistence directory
   UPLOADS_DIR — Path to the PDF uploads directory
 """
 
@@ -33,23 +32,20 @@ else:
 
 # ── Resolved paths ────────────────────────────────────────────────────────────
 
-CHROMA_DIR  = BASE_STORAGE / "data" / "chroma"
 UPLOADS_DIR = BASE_STORAGE / "uploads"
 
 # ── Auto-create on import ─────────────────────────────────────────────────────
-# Both directories are created immediately so services never have to check.
 
-CHROMA_DIR.mkdir(parents=True, exist_ok=True)
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 
-# ── Legacy helper (called from FastAPI lifespan) ──────────────────────────────
+# ── Helper (called from FastAPI lifespan) ─────────────────────────────────────
 
 def ensure_app_directories() -> None:
     """
     Ensure all application directories exist.
 
-    CHROMA_DIR and UPLOADS_DIR are already created at import time above.
+    UPLOADS_DIR is already created at import time above.
     This function handles any additional directories (sqlite, etc.) that
     config.py may reference, and is safe to call multiple times.
     """
@@ -64,6 +60,5 @@ def ensure_app_directories() -> None:
     for path in extra_paths:
         path.mkdir(parents=True, exist_ok=True)
 
-    # Re-ensure storage dirs in case they were deleted at runtime
-    CHROMA_DIR.mkdir(parents=True, exist_ok=True)
+    # Re-ensure uploads dir in case it was deleted at runtime
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)

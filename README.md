@@ -1,6 +1,6 @@
 # AI Agent Pipeline — Part 1 Backend Foundation
 
-College project backend using **FastAPI**, **LangChain**, **LangGraph**, **Google Gemini**, **ChromaDB**, **Prophet**, and **Gmail SMTP**.
+College project backend using **FastAPI**, **LangChain**, **LangGraph**, **Google Gemini**, **Pinecone**, **Prophet**, and **Gmail SMTP**.
 
 Part 1 includes a **working RAG pipeline** (PDF ingest, vector retrieval, grounded Gemini answers). Content/Email agents and Part 2 (disaster system) are not implemented yet.
 
@@ -12,11 +12,11 @@ Part 1 includes a **working RAG pipeline** (PDF ingest, vector retrieval, ground
 backend/
 ├── agents/              # One module per agent (RAG, Content, Email)
 ├── pipelines/           # LangGraph and Google ADK orchestration
-├── services/            # Shared infrastructure (Gemini, Chroma, email, PDFs)
+├── services/            # Shared infrastructure (Gemini, Pinecone, email, PDFs)
 ├── ml/                  # Prophet time-series forecasting
 ├── api/                 # FastAPI routes and dependency injection
 ├── schemas/             # PipelineState + API request/response models
-├── data/                # Chroma persistence, SQLite (later)
+├── data/                # SQLite (later)
 ├── uploads/             # Incoming PDFs for RAG
 ├── tests/               # Pytest tests
 ├── utils/               # Small shared helpers
@@ -42,7 +42,7 @@ backend/
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/upload-pdf` | POST | Upload PDF → chunk → embed → ChromaDB |
+| `/upload-pdf` | POST | Upload PDF → chunk → embed → Pinecone |
 | `/query` | POST | Run RAG agent → answer + retrieved chunks |
 
 **Ingest a document**
@@ -60,14 +60,14 @@ curl -X POST "http://127.0.0.1:8000/query" \
   -d '{"query": "What is the document about?"}'
 ```
 
-Requires `GEMINI_API_KEY` in `.env`. First run downloads `sentence-transformers/all-MiniLM-L6-v2`.
+Requires `GEMINI_API_KEY` and `PINECONE_API_KEY` in `.env`.
 
 ---
 
 ## Future Part 1 flow
 
 1. **User** sends a query (and optional email recipient) via API.
-2. **RAG Agent** searches ChromaDB for relevant chunks, then asks Gemini for a grounded answer → `rag_response`.
+2. **RAG Agent** searches Pinecone for relevant chunks, then asks Gemini for a grounded answer → `rag_response`.
 3. **Content Agent** formats the answer (and optional forecast) into a report → `formatted_content`.
 4. **Email Agent** sends the report via SMTP → `email_status`.
 5. **Forecasting** (when wired) runs on time-series input → `forecast_data` before or after content formatting.
@@ -83,7 +83,7 @@ User Query
     │                  ▲
     │                  │ (optional)
     ▼                  │
- ChromaDB          Forecasting
+ Pinecone          Forecasting
  + Gemini              (Prophet)
 ```
 
@@ -93,11 +93,11 @@ User Query
 
 **LangGraph** treats your pipeline as a **graph**:
 
-- **Nodes** = functions (our agents’ `run` methods).
+- **Nodes** = functions (our agents' `run` methods).
 - **Edges** = order of execution (`rag` → `content` → `email`).
 - **State** = one dictionary (`PipelineState`) updated at each step.
 
-Each node receives the full state, updates only its fields, and returns the state for the next node. This makes it easy to add Part 2 branches (e.g. “if disaster detected, go to alert node”) without rewriting RAG or Email agents.
+Each node receives the full state, updates only its fields, and returns the state for the next node. This makes it easy to add Part 2 branches (e.g. "if disaster detected, go to alert node") without rewriting RAG or Email agents.
 
 See `pipelines/langgraph_pipeline.py` for the stub graph definition.
 
@@ -129,7 +129,7 @@ Services (`GeminiService`, `VectorService`, etc.) are injected into agents for t
 
 ## Google ADK pipeline
 
-`pipelines/adk_pipeline.py` provides a **parallel orchestration path** using the same agents and state. When you integrate Google ADK, you will register agents with ADK’s runner instead of LangGraph’s `StateGraph`. The foundation keeps both pipelines aligned so behavior stays consistent.
+`pipelines/adk_pipeline.py` provides a **parallel orchestration path** using the same agents and state. When you integrate Google ADK, you will register agents with ADK's runner instead of LangGraph's `StateGraph`. The foundation keeps both pipelines aligned so behavior stays consistent.
 
 ---
 
@@ -150,7 +150,7 @@ copy .env.example .env   # Windows
 # cp .env.example .env   # macOS/Linux
 ```
 
-Edit `.env` with your `GEMINI_API_KEY` and SMTP settings.
+Edit `.env` with your `GEMINI_API_KEY`, `PINECONE_API_KEY`, and SMTP settings.
 
 ```bash
 uvicorn main:app --reload

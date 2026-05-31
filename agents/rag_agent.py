@@ -1,7 +1,7 @@
 """
 RAG Agent — Retrieval-Augmented Generation orchestration.
 
-This agent coordinates services only; it does not load PDFs or talk to Chroma
+This agent coordinates services only; it does not load PDFs or talk to Pinecone
 directly beyond VectorService / GeminiService abstractions.
 
 LangGraph node flow:
@@ -16,7 +16,7 @@ The exception is NEVER re-raised after Gemini is called — FastAPI will never
 see a 500/502 caused by a Gemini problem.
 
 The ONLY exceptions that propagate out of this agent are those raised during
-vector retrieval (ChromaDB failures), which are genuine infrastructure errors
+vector retrieval (Pinecone failures), which are genuine infrastructure errors
 that the route layer should surface as 500.
 """
 

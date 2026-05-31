@@ -5,7 +5,7 @@ Graph topology:
   START → rag → content → email → END
 
 Node responsibilities:
-  rag     — ChromaDB retrieval + grounded Gemini answer  (RAGAgent)
+  rag     — Pinecone retrieval + grounded Gemini answer  (RAGAgent)
   content — Format rag_response into a Markdown report   (ContentAgent)
   email   — Deliver formatted_content via SMTP           (EmailAgent)
 

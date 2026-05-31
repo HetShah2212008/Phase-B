@@ -4,7 +4,7 @@ Document loading and preprocessing utilities for the RAG pipeline.
 Typical ingestion flow (API / future batch jobs):
   1. load_pdf()        → extract text per page
   2. split_documents() → break into overlapping chunks
-  3. VectorService.add_documents() → embed and store in ChromaDB
+  3. VectorService.add_documents() → embed and store in Pinecone
 
 The RAG Agent does NOT call this module — only upload/ingestion routes do.
 """

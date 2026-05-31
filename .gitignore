@@ -9,7 +9,6 @@ __pycache__/
 venv/
 
 # ── Data & generated files ────────────────────────────────────────────────────
-data/chroma/
 uploads/*.pdf
 uploads/*.png
 cashflow_forecast.png

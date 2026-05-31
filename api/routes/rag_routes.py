@@ -60,12 +60,12 @@ router = APIRouter(tags=["RAG"])
 
 @router.post("/upload-pdf", response_model=UploadPdfResponse)
 async def upload_pdf(
-    file: UploadFile = File(..., description="PDF file to ingest into ChromaDB"),
+    file: UploadFile = File(..., description="PDF file to ingest into Pinecone"),
     document_service: DocumentService = Depends(get_document_service),
     vector_service: VectorService = Depends(get_vector_service),
 ) -> UploadPdfResponse:
     """
-    Ingest a PDF: save → extract text → chunk → embed → store in ChromaDB.
+    Ingest a PDF: save → extract text → chunk → embed → store in Pinecone.
 
     This route owns document processing; the RAG Agent only queries the index.
     """
@@ -98,7 +98,7 @@ async def upload_pdf(
             )
             metadatas.append(meta)
 
-        # 3) Embed with MiniLM and persist in Chroma
+        # 3) Embed with multilingual-e5-large and persist in Pinecone
         vector_service.add_documents(texts, metadatas=metadatas)
 
         return UploadPdfResponse(
@@ -127,7 +127,7 @@ async def query_documents(
     RAGAgent absorbs ALL Gemini errors internally and returns a fallback
     response — this route will never see a Gemini-caused exception.
     The only exceptions that reach here are genuine infrastructure failures
-    (e.g. ChromaDB unreachable), which are surfaced as HTTP 500.
+    (e.g. Pinecone unreachable), which are surfaced as HTTP 500.
     """
     state = create_initial_state(query=body.query)
 
@@ -138,7 +138,7 @@ async def query_documents(
         logger.warning("[/query] rejected (400): %s", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        # True infrastructure failure (ChromaDB, etc.) — Gemini errors never reach here.
+        # True infrastructure failure (Pinecone, etc.) — Gemini errors never reach here.
         logger.exception("[/query] infrastructure failure: %s", exc)
         raise HTTPException(
             status_code=500, detail="An unexpected infrastructure error occurred."

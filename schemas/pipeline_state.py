@@ -22,7 +22,7 @@ class PipelineState(TypedDict, total=False):
     # User's original question or task description
     query: str
 
-    # Text chunks retrieved from ChromaDB by the RAG Agent
+    # Text chunks retrieved from Pinecone by the RAG Agent
     retrieved_chunks: list[str]
 
     # Full retrieval hits (metadata + similarity) for APIs and debugging

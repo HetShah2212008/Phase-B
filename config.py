@@ -49,22 +49,12 @@ class Settings(BaseSettings):
     # Content Agent uses a separate model entry so RAG and formatting can be tuned independently
     gemini_content_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_CONTENT_MODEL")
 
-    # --- Embeddings & RAG retrieval ---
-    embedding_model: str = Field(
-        default="sentence-transformers/all-MiniLM-L6-v2",
-        alias="EMBEDDING_MODEL",
-    )
+    # --- RAG retrieval ---
     rag_top_k: int = Field(default=5, alias="RAG_TOP_K")
 
-    # --- ChromaDB ---
-    chroma_persist_dir: str = Field(
-        default=str(BASE_DIR / "data" / "chroma"),
-        alias="CHROMA_PERSIST_DIR",
-    )
-    chroma_collection_name: str = Field(
-        default="project_documents",
-        alias="CHROMA_COLLECTION_NAME",
-    )
+    # --- Pinecone ---
+    pinecone_api_key: str = Field(default="", alias="PINECONE_API_KEY")
+    pinecone_index: str = Field(default="phaseb", alias="PINECONE_INDEX")
 
     # --- Documents ---
     upload_dir: str = Field(default=str(BASE_DIR / "uploads"), alias="UPLOAD_DIR")

@@ -1,5 +1,5 @@
 """
-Google ADK pipeline — lazy loaded to avoid opentelemetry conflicts with chromadb.
+Google ADK pipeline — lazy loaded to avoid opentelemetry conflicts at startup.
 """
 
 import logging
