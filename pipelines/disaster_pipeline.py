@@ -150,7 +150,6 @@ def forecast_weather(state: DisasterState) -> DisasterState:
 
 
 # ─── NODE 3: DISASTER PREDICTION MODEL ────────────────────────────────────────
-# Train the classifier once at module load — not on every request.
 # Features: [max_precip, avg_precip, max_wind, humidity] → disaster_type
 
 from sklearn.ensemble import RandomForestClassifier as _RFC
@@ -171,9 +170,16 @@ _Y_TRAIN = [
     "None",      "None",      "None",
     "Flood",     "Flood",     "Flood",
 ]
-_CLASSIFIER = _RFC(n_estimators=50, random_state=42)
-_CLASSIFIER.fit(_X_TRAIN, _Y_TRAIN)
-logger.info("Disaster ML classifier trained and cached at module load")
+_classifier = None
+
+
+def get_classifier():
+    global _classifier
+    if _classifier is None:
+        _classifier = _RFC(n_estimators=50, random_state=42)
+        _classifier.fit(_X_TRAIN, _Y_TRAIN)
+        logger.info("Disaster ML classifier trained and cached")
+    return _classifier
 
 
 def predict_disaster(state: DisasterState) -> DisasterState:
@@ -192,8 +198,8 @@ def predict_disaster(state: DisasterState) -> DisasterState:
     avg_humidity = sum(humidity[-24:]) / max(len(humidity[-24:]), 1) if humidity else 50
 
     features = np.array([[max_precip, avg_precip, max_wind, avg_humidity]])
-    prediction = _CLASSIFIER.predict(features)[0]
-    probabilities = _CLASSIFIER.predict_proba(features)[0]
+    prediction = get_classifier().predict(features)[0]
+    probabilities = get_classifier().predict_proba(features)[0]
     confidence = float(max(probabilities))
 
     state["disaster_prediction"] = {

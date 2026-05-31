@@ -12,13 +12,11 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 try:
-    from prophet import Prophet
     import matplotlib
     matplotlib.use("Agg")  # non-interactive backend for servers
     import matplotlib.pyplot as plt
     PROPHET_AVAILABLE = True
 except ImportError:
-    Prophet = None
     plt = None
     PROPHET_AVAILABLE = False
 
@@ -72,6 +70,7 @@ def run_cashflow_forecast(
         historical_df = generate_synthetic_cashflow()
 
     # Train Prophet
+    from prophet import Prophet
     model = Prophet(
         yearly_seasonality=False,
         weekly_seasonality=False,

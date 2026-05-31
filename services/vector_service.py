@@ -18,6 +18,18 @@ from config import get_settings
 
 logger = logging.getLogger(__name__)
 
+_embedding_model = None
+
+
+def get_embedding_model():
+    global _embedding_model
+    if _embedding_model is None:
+        settings = get_settings()
+        _embedding_model = embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name=settings.embedding_model,
+        )
+    return _embedding_model
+
 
 class VectorService:
     """
@@ -35,11 +47,7 @@ class VectorService:
         self._embedding_model = settings.embedding_model
         self._client = chromadb.PersistentClient(path=settings.chroma_persist_dir)
         self._collection: Collection | None = None
-
-        # Same model must be used for ingestion and search or vectors are incompatible
-        self._embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name=self._embedding_model,
-        )
+        # _embedding_fn is loaded lazily via get_embedding_model()
 
     def get_or_create_collection(self, name: str | None = None) -> Collection:
         """
@@ -51,7 +59,7 @@ class VectorService:
         collection_name = name or self._collection_name
         self._collection = self._client.get_or_create_collection(
             name=collection_name,
-            embedding_function=self._embedding_fn,
+            embedding_function=get_embedding_model(),
             metadata={"hnsw:space": "cosine"},
         )
         logger.info(
