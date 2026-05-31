@@ -21,7 +21,14 @@ router = APIRouter(tags=["Disaster"])
 
 # In-memory session store for HITL
 _sessions: dict[str, Any] = {}
-_pipeline = DisasterPipeline()
+_pipeline_instance: "DisasterPipeline | None" = None
+
+
+def _get_pipeline() -> "DisasterPipeline":
+    global _pipeline_instance
+    if _pipeline_instance is None:
+        _pipeline_instance = DisasterPipeline()
+    return _pipeline_instance
 
 
 class LocationRequest(BaseModel):
@@ -43,7 +50,7 @@ async def run_disaster_pipeline(body: LocationRequest):
     generate_alert → human_review) and returns the state awaiting approval.
     """
     try:
-        state = await _pipeline.run(body.location)
+        state = await _get_pipeline().run(body.location)
         session_id = f"disaster_{body.location.replace(' ', '_')}_{id(state)}"
         _sessions[session_id] = state
 
@@ -81,7 +88,7 @@ async def review_alert(body: ReviewRequest):
     if not state:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    updated = await _pipeline.run_with_approval(state, body.approved, body.feedback)
+    updated = await _get_pipeline().run_with_approval(state, body.approved, body.feedback)
     _sessions[body.session_id] = updated
 
     return {

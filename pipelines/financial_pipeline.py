@@ -68,10 +68,16 @@ class FinancialPipelineState(TypedDict, total=False):
 
 
 # ---------------------------------------------------------------------------
-# Shared RAGAgent instance
-# RAGAgent is imported and instantiated once — its file is never modified.
+# Shared RAGAgent instance — lazy, created on first pipeline invocation.
 # ---------------------------------------------------------------------------
-_rag_agent = RAGAgent()
+_rag_agent: "RAGAgent | None" = None
+
+
+def _get_rag_agent() -> "RAGAgent":
+    global _rag_agent
+    if _rag_agent is None:
+        _rag_agent = RAGAgent()
+    return _rag_agent
 
 
 # ---------------------------------------------------------------------------
@@ -96,7 +102,7 @@ async def rag_node(state: FinancialPipelineState) -> dict:
     rag_state = create_initial_state(query=query)
 
     try:
-        result = await _rag_agent.run(rag_state)
+        result = await _get_rag_agent().run(rag_state)
         raw_output = result.get("rag_response") or ""
         logger.info("[rag_node] RAG complete — output len=%d", len(raw_output))
         print(f"   ✅ RAG complete — {len(raw_output)} chars retrieved")
@@ -190,7 +196,7 @@ async def email_node(state: FinancialPipelineState) -> dict:
 # Graph assembly
 # ---------------------------------------------------------------------------
 
-def _build_financial_pipeline() -> StateGraph:
+def _build_financial_pipeline():
     """Compile and return the financial analysis pipeline graph."""
     graph = StateGraph(FinancialPipelineState)
 
@@ -211,5 +217,29 @@ def _build_financial_pipeline() -> StateGraph:
     return compiled
 
 
+# Lazy-loaded pipeline — compiled on first use, not at import time.
+_financial_pipeline_instance = None
+
+
+def get_financial_pipeline():
+    global _financial_pipeline_instance
+    if _financial_pipeline_instance is None:
+        _financial_pipeline_instance = _build_financial_pipeline()
+    return _financial_pipeline_instance
+
+
+# Backward-compatible name: accessing this attribute triggers lazy compilation.
+class _LazyPipeline:
+    """Proxy that compiles the pipeline on first attribute/call access."""
+    def __getattr__(self, name):
+        return getattr(get_financial_pipeline(), name)
+
+    async def ainvoke(self, *args, **kwargs):
+        return await get_financial_pipeline().ainvoke(*args, **kwargs)
+
+    def invoke(self, *args, **kwargs):
+        return get_financial_pipeline().invoke(*args, **kwargs)
+
+
 # Exported pipeline — import this in routes or scripts
-financial_analysis_pipeline = _build_financial_pipeline()
+financial_analysis_pipeline = _LazyPipeline()

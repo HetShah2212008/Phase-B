@@ -45,9 +45,16 @@ class VectorService:
         settings = get_settings()
         self._collection_name = settings.chroma_collection_name
         self._embedding_model = settings.embedding_model
-        self._client = chromadb.PersistentClient(path=settings.chroma_persist_dir)
+        self._persist_dir = settings.chroma_persist_dir
+        self._chroma_client: chromadb.PersistentClient | None = None
         self._collection: Collection | None = None
-        # _embedding_fn is loaded lazily via get_embedding_model()
+        # Both the ChromaDB client and embedding model are loaded lazily on first use
+
+    @property
+    def _client(self) -> chromadb.PersistentClient:
+        if self._chroma_client is None:
+            self._chroma_client = chromadb.PersistentClient(path=self._persist_dir)
+        return self._chroma_client
 
     def get_or_create_collection(self, name: str | None = None) -> Collection:
         """
