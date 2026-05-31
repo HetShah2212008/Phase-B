@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: phaseb
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    plan: free
+    disk:
+      name: phaseb-data
+      mountPath: /data
+      sizeGB: 1
